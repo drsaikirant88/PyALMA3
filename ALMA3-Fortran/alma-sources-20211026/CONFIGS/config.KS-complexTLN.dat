@@ -1,0 +1,63 @@
+!
+! ==========================================================================
+! ALMA configuration file
+! ==========================================================================
+!
+! ~~~~~~~~~~~~~~~~~~~~~
+! # General parameters
+! ~~~~~~~~~~~~~~~~~~~~~
+!
+ 128                        ! number of digits
+ 8                          ! order of the Gaver sequence
+!
+ Tidal                      ! LN type ('Loading' or 'Tidal')
+!
+ 2                          ! Minimum degree
+ 2                          ! Maximum degree
+ 1                          ! Step
+!
+!
+ log                       ! Time scale ('log' / 'lin' / 'ext')
+ 100                       ! Time points (minus one)
+ -5 5                      ! Time range  (10^(m1:m2) kyrs)
+!
+! ~~~~~~~~~~~~~~~~~~~~~
+! # Load time history
+! ~~~~~~~~~~~~~~~~~~~~~
+!
+ step                     ! Load fcn ( 'step' / 'ramp' )
+ 1.0                      ! Ramp length (kyrs)
+!
+! ~~~~~~~~~~~~~~~~~~~~~
+! # Rheological model 
+! ~~~~~~~~~~~~~~~~~~~~~
+!
+ 2                          ! Number of layers
+!
+ MODELS/uniform-sphere.dat
+!
+!
+! ~~~~~~~~~~~~~~~~~~~~~
+! # Log file 
+! ~~~~~~~~~~~~~~~~~~~~~
+!
+ alma-KS.log
+!
+!
+! ~~~~~~~~~~~~~~~~~~~~~
+! # Output files 
+! ~~~~~~~~~~~~~~~~~~~~~
+!
+ Complex                     ! 'Real' or 'Complex' LNs
+!
+ ln_vs_t                     ! Output file format (LNs vs t or LNs vs n)
+!
+ h_complex_KS.dat
+ l_complex_KS.dat
+ k_complex_KS.dat
+!
+!
+!
+! ==========================================================================
+! End of ALMA configuration file
+! ==========================================================================
