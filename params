@@ -1,0 +1,56 @@
+# pyALMA3 parameters
+# Set all parameters here, following the TOML file structure
+
+## Models
+[model]
+filename = '/mnt/e/OneDrive/Research/ALMA/pyalma/models/europa_alma.bm'
+
+# Number of layers
+num_layers = 6
+
+## General Parameters
+[params]
+# Number of digits
+num_digits = 128
+
+# Order of Gaver method
+gorder = 8
+
+# Loading type: loading or tidal
+mode = 'tidal'
+
+# Min/Max degrees and step
+dmin  = 1
+dmax  = 10
+dstep = 1
+
+# Time scale: 'log', 'ext', 'lin'
+time = 'ext'
+
+# Time points minus 1
+tpoints = 100
+
+# Time range: 10^(m1:m2) kyrs
+timestart = -3
+timeend   = 3
+
+# Load time history - function: 'step', 'ramp'
+function = 'step'
+
+# Ramp lenght (kyrs)
+function_length = 1.0
+
+# Verbose
+verbose = true
+
+[output]
+# type: 'complex' or 'real'
+type = 'complex'
+
+# format: LNs vs t (ln_vs_t)  or  LNs vs n (ln_vs_n)
+format = 'ln_vs_t'
+
+# Love number swithes output
+lnh = true
+lnl = true
+lnk = true
