@@ -609,4 +609,4 @@ def love_numbers_sampler(n,s,iload):
     ll = x[1] * mass / r[nla]
     kk = ( - 1 - x[2] * mass / ( r[nla] * gra[nla] ) )
 
-    return x
+    return hh, ll, kk
