@@ -1,6 +1,7 @@
 import numpy as np
 import mpmath as mp
 import math
+import time
 
 # Constants
 
@@ -209,7 +210,7 @@ def parse_histtype( loadfcn ):
         raise ValueError( 'Unknown load time-history: "'+loadfcn+'"' )
     return ihist
 
-def love_numbers(degrees,timesteps,loadtype,loadfcn,tau,output,order):
+def love_numbers(degrees,timesteps,loadtype,loadfcn,tau,output,order,verbose=False):
     """
     love_numbers(degrees,timesteps,loadtype,loadfcn,tau,output,order)
     """
@@ -234,6 +235,8 @@ def love_numbers(degrees,timesteps,loadtype,loadfcn,tau,output,order):
     k_love = mp.matrix( ndeg, nt )
 
     # ------- Compute LNs
+
+    t1 = time.perf_counter()
 
     idx_n = 0
     idx_t = 0
@@ -260,6 +263,10 @@ def love_numbers(degrees,timesteps,loadtype,loadfcn,tau,output,order):
                         h_love[ idx_n, idx_t ] += fh * hh * zeta[ik-1] * f
                         l_love[ idx_n, idx_t ] += fh * ll * zeta[ik-1] * f
                         k_love[ idx_n, idx_t ] += fh * kk * zeta[ik-1] * f
+            if verbose:
+                t2 = time.perf_counter()
+                print( "Harmonic degree n = " + str(n) + " ( " + str(t2-t1) + " s )" )
+                t1 = t2
     elif itype==2:
         for idx_n in range(ndeg):
             for idx_t in range(nt):
@@ -271,6 +278,19 @@ def love_numbers(degrees,timesteps,loadtype,loadfcn,tau,output,order):
                 h_love[ idx_n, idx_t ] = hh
                 l_love[ idx_n, idx_t ] = ll
                 k_love[ idx_n, idx_t ] = kk
+            if verbose:
+                t2 = time.perf_counter()
+                print( "Harmonic degree n = " + str(n) + " ( " + str(t2-t1) + " s )" )
+                t1 = t2
+
+    if ( itype==1 )| ( itype==3 ):
+        h_love = np.array(h_love.tolist(),dtype=float)
+        l_love = np.array(l_love.tolist(),dtype=float)
+        k_love = np.array(k_love.tolist(),dtype=float)
+    elif itype==2:
+        h_love = np.array(h_love.tolist(),dtype=complex)
+        l_love = np.array(l_love.tolist(),dtype=complex)
+        k_love = np.array(k_love.tolist(),dtype=complex)
 
     return h_love, l_love, k_love
 
