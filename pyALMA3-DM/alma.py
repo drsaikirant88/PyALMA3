@@ -603,7 +603,7 @@ def love_numbers_sampler(n,s,iload):
     else:
         mu_s = complex_rigidity(s,mu[0],eta[0],rheol[0],rpar[0,:])
         Ydir = direct_matrix (n,r[1],rho[0],mu_s,gra[0]) 
-        bc   = Ydir[:,0:2]
+        bc   = Ydir[:,0:3]
 
     bs = surface_bc (n,r[nla],gra[nla],iload)
 
