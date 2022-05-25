@@ -360,9 +360,9 @@ def salzer_weights(order):
             q1 = mp.binomial(m, j)
             q2 = mp.binomial(2*j, j)
             q3 = mp.binomial(j, k-j)
-            zeta[k-1] = zeta[k-1] + j**(m+1) / ( fattm * q1 * q2 * q3 )
+            zeta[k-1] = zeta[k-1] + j**(m+1) / fattm * q1 * q2 * q3
         if (m+k)%2 != 0:
-            zeta[k] = -zeta[k]
+            zeta[k-1] = -zeta[k-1]
 
     return zeta
 
