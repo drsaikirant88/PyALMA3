@@ -124,6 +124,85 @@ def read_model_pp(fname):
     # Return output variables
     return COLUMNS, UNITS, MODEL, LAMBDA, MU, K, SIGMA, Y, RIG, VIS
 
+#%% Read velocity model from PlanetProfile v2.0+
+def read_model_ppv2(fname):
+    print('Reading model from PlanetProfile output...')
+
+    # Read file
+    with open(fname, 'r') as f:
+        modelLabel = f.readline()
+        nHeadLines = int(f.readline().split('=')[-1])
+
+    # Read data
+    P_MPa, T_K, r_m, phase, rho_kgm3, Cp_JkgK, alpha_pK, \
+    g_ms2, phi_frac, sigma_Sm, kTherm_WmK, VP_kms, VS_kms, \
+    QS, KS_GPa, GS_GPa, Ppore_MPa, rhoMatrix_kgm3, \
+    rhoPore_kgm3, MLayer_kg, VLayer_m3, Htidal_Wm3 \
+        = np.loadtxt(fname, skiprows=nHeadLines, unpack=True)
+
+    # List of variable names
+    COLUMNS = ['P', 'T', 'r', 'phase', 'rho', 'Cp', 'alpha',
+    'g', 'phi', 'sigma', 'kTherm', 'VP', 'VS',
+    'QS', 'KS', 'GS', 'Ppore', 'rhoMatrix',
+    'rhoPore', 'MLayer', 'VLayer', 'Htidal']
+    
+    # List of data units
+    UNITS = ['MPa', 'K', 'm', '', 'kg m-3', 'J kg-1 K-1', 'K-1',
+    'm s-2', '-', 'S m-1', 'W m-1 K-1', 'km s-1', 'km s-1',
+    '', 'GPa', 'GPa', 'MPa', 'kg m-3',
+    'kg m-3', 'kg', 'm3', 'W m-3']
+
+    # Combine data into columns to reuse existing infrastructure
+    MODEL = np.vstack([P_MPa, T_K, r_m, phase, rho_kgm3, Cp_JkgK, alpha_pK,
+    g_ms2, phi_frac, sigma_Sm, kTherm_WmK, VP_kms, VS_kms,
+    QS, KS_GPa, GS_GPa, Ppore_MPa, rhoMatrix_kgm3,
+    rhoPore_kgm3, MLayer_kg, VLayer_m3, Htidal_Wm3]).T
+
+    # Check GPA and MPA to Pa
+    changeheader = ['P', 'VP', 'VS', 'r', 'rho', 'KS', 'GS']
+    for index, (header, unit) in enumerate(zip(COLUMNS, UNITS)):
+        if header in changeheader:
+            if unit.lower() == 'mpa':
+                UNITS[index] = 'Pa'
+                MODEL[:, index] = MODEL[:, index] * 1e6
+
+            elif unit.lower() == 'gpa':
+                UNITS[index] = 'Pa'
+                MODEL[:, index] = MODEL[:, index] * 1e9
+
+            elif unit.lower() == 'km':
+                UNITS[index] = 'm'
+                MODEL[:, index] = MODEL[:, index] * 1e3
+
+            elif unit.lower() == 'km s-1':
+                UNITS[index] = 'm s-1'
+                MODEL[:, index] = MODEL[:, index] * 1e3
+
+    ## Calculate elastic parameters
+    # LAMBDA = rho (Vp^2 - Vs^2)
+    LAMBDA = MODEL[:, COLUMNS.index('rho')] * (np.power(MODEL[:, COLUMNS.index('VP')], 2) - np.power(MODEL[:, COLUMNS.index('VS')], 2))
+
+    # MU = rho Vs^2
+    MU = MODEL[:, COLUMNS.index('rho')] * np.power(MODEL[:, COLUMNS.index('VS')], 2)
+
+    # Bulk Modulus K = lambda + 2/3 mu
+    K = LAMBDA + 2 * MU / 3
+
+    # Poissons ratio sigma = lambda / 2*(lambda + mu)
+    SIGMA = LAMBDA / (2 * LAMBDA + 2* MU)
+
+    # Youngs modulus Y = lambda (1 - 2 sigma) + 2 mu
+    Y = LAMBDA * (1 - 2 * SIGMA) + 2 * MU
+
+    # Rigidity RIG = 2/3 mu
+    RIG = 2 * MU / 3
+
+    # Viscosity VIS = RIG / GRAD(Vs)
+    VIS = RIG / np.gradient(MODEL[:, COLUMNS.index('VS')], MODEL[:, COLUMNS.index('r')])
+
+    # Return output variables
+    return COLUMNS, UNITS, MODEL, LAMBDA, MU, K, SIGMA, Y, RIG, VIS
+
 #%% Normalization
 # Similar to Normalization.f90 routine
 # Defines and normalizes the model parameters
