@@ -14,33 +14,23 @@ v0.1: This is the initial conversion of FORTRAN to Python
 '''
 
 #%% Import Libraries
-import os
-from time import time
-import numpy as np
-import scipy as sp
+from pyexpat import model
 from toml import load as tomlload
-from itertools import islice, product
-from scipy.linalg import lu as ludecomp
-from scipy.linalg import solve as solveequ
-from scipy.special import binom
-
 # Joblib
 from os import cpu_count
 from joblib import Parallel, delayed
 from time import perf_counter
-
 # Numpy
-from numpy import ndarray
-
+from numpy import ndarray, array
 # Math
 from math import floor
-
 # MPMATH
 from mpmath import mp
-from mpmath import binomial, matrix, factorial, eye, diag, lu_solve
+from mpmath import binomial, matrix, factorial, eye, diag, lu_solve, log
 
 # Prallel
-parallel = True if cpu_count() > 2 else False
+#parallel = True if cpu_count() > 2 else False
+parallel = False
 
 #%% Initialize
 def initialize(ndigits):
@@ -138,7 +128,7 @@ def build_model(r_in, rho_in, mu_in, eta_in, rheology, params, ndigits=128, verb
     # Planet Mass
     if verbose:
         print('  >> Computing mass of the planet')
-    
+    '''
     if parallel:
         def wrapper_layer(rho, ri_1, ri):
             return rho * (ri_1 ** 3 - ri ** 3)
@@ -146,11 +136,15 @@ def build_model(r_in, rho_in, mu_in, eta_in, rheology, params, ndigits=128, verb
         if verbose: vbse=1
 
         mlayer = Parallel(verbose=vbse, n_jobs=-1)(delayed(wrapper_layer)(rho[i], r[i+1], r[i]) for i in range(nla))
+        mlayer = matrix(mlayer)
     
     else:
         for i in range(nla):
             mlayer[i] = rho[i] * (r[i + 1] ** 3 - r[i] ** 3)
-
+    '''
+    for i in range(nla):
+            mlayer[i] = rho[i] * (r[i + 1] ** 3 - r[i] ** 3)
+    
     mlayer = mlayer * mp.mpf('4') / mp.mpf('3') * mp.pi
 
     mass = sum(mlayer)
@@ -158,7 +152,7 @@ def build_model(r_in, rho_in, mu_in, eta_in, rheology, params, ndigits=128, verb
     # Gravity
     if verbose:
         print('  >> Computing gravity at the interface boundaries')
-    
+    '''
     if parallel:
         def wrapper_gravity(Gnwt, mlayer, r):
             return Gnwt * sum(mlayer) / (r ** 2)
@@ -168,6 +162,10 @@ def build_model(r_in, rho_in, mu_in, eta_in, rheology, params, ndigits=128, verb
         gra = Parallel(verbose=vbse, n_jobs=-1)(delayed(wrapper_gravity)(Gnwt, mlayer[0:i], r[i]) for i in range(1, nla + 1))
     
     else:
+        for i in range(1, nla + 1):
+            gra[i] = Gnwt * sum(mlayer[0:i]) / (r[i] ** 2)
+    '''
+    for i in range(1, nla + 1):
         gra[i] = Gnwt * sum(mlayer[0:i]) / (r[i] ** 2)
     
     # Normalize
@@ -517,14 +515,14 @@ def love_numbers_sampler(n, s, iload, model_params, verbose=True):
             lam = lam * (direct_matrix(n, r[i + 1], rho[i], mu_s, gra[i + 1], G) * inverse_matrix(n, r[i], rho[i], mu_s, gra[i], G))
 
     if rheol[0] == 0:
-        bc = fluid_core_bc(n, r[1], rho[0], gra[1])
+        bc = fluid_core_bc(n, r[1], rho[0], gra[1], G)
 
     else:
         mu_s = complex_rigidity(s, mu[0], eta[0], rheol[0], rpar[0, :])
         Ydir = direct_matrix(n, r[1], rho[0], mu_s, gra[1], G) 
         bc   = Ydir[:, 0:3]
 
-    bs = surface_bc(n, r[nla], gra[nla], iload)
+    bs = surface_bc(n, r[nla], gra[nla], iload, G)
 
     # Compute the 'R' and 'Q' arrays
     prod = lam * bc
@@ -550,7 +548,7 @@ def love_numbers_sampler(n, s, iload, model_params, verbose=True):
     return hh, ll, kk
 
 # Compute love numbers
-def love_numbers(degrees, timesteps, loadtype, loadfcn, tau, output, order, verbose=True):
+def love_numbers(degrees, timesteps, loadtype, loadfcn, tau, model_params, output, order, verbose=True):
 
     # Parse loading, output and hist types
     iload = parse_loadtype(loadtype)
@@ -564,45 +562,55 @@ def love_numbers(degrees, timesteps, loadtype, loadfcn, tau, output, order, verb
     nt   = len(timesteps)
     ndeg = len(degrees)
 
-    timesteps  = mp.matrix( timesteps )
+    timesteps  = matrix(timesteps)
     
+    # iota
+    iota = model_params['iota']
+
     # Allocate output arrays
-    h_love = mp.matrix(ndeg, nt)
-    l_love = mp.matrix(ndeg, nt)
-    k_love = mp.matrix(ndeg, nt)
+    h_love = matrix(ndeg, nt)
+    l_love = matrix(ndeg, nt)
+    k_love = matrix(ndeg, nt)
 
     # Compute LNs
-    t1 = time.perf_counter()
+    t1 = perf_counter()
 
-    idx_n = 0
-    idx_t = 0
+    if itype == 1 or itype == 3:
 
-    if ( itype==1 )| ( itype==3 ):
         zeta = salzer_weights(order)
+
         for idx_n in range(ndeg):
             n = degrees[idx_n]
+            
             for idx_t in range(nt):
+
                 t = timesteps[idx_t]
-                f = mp.log(2) / t
-                for ik in range(1,2*order+1):
+                f = log(2) / t
+
+                for ik in range(1, 2*order + 1):
                     s = f * ik
-                    hh,ll,kk = love_numbers_sampler(n,s,iload)
-                    if ihist==1:
-                        fh = mp.mpf('1')/s
-                    elif ihist==2:
-                        fh = ( mp.mpf('1') - mp.exp( -s * tau ) ) / (tau * s**2)
-                    if( itype==3 ):
-                        h_love[ idx_n, idx_t ] += fh * (s * hh) * zeta[ik-1] * f
-                        l_love[ idx_n, idx_t ] += fh * (s * ll) * zeta[ik-1] * f
-                        k_love[ idx_n, idx_t ] += fh * (s * kk) * zeta[ik-1] * f
+                    hh, ll, kk = love_numbers_sampler(n, s, iload, model_params)
+
+                    if ihist == 1:
+                        fh = mp.mpf('1') / s
+
+                    elif ihist == 2:
+                        fh = (mp.mpf('1') - mp.exp( -s * tau )) / (tau * s**2)
+
+                    if itype == 3:
+                        h_love[idx_n, idx_t] += fh * (s * hh) * zeta[ik-1] * f
+                        l_love[idx_n, idx_t] += fh * (s * ll) * zeta[ik-1] * f
+                        k_love[idx_n, idx_t] += fh * (s * kk) * zeta[ik-1] * f
+
                     else:
-                        h_love[ idx_n, idx_t ] += fh * hh * zeta[ik-1] * f
-                        l_love[ idx_n, idx_t ] += fh * ll * zeta[ik-1] * f
-                        k_love[ idx_n, idx_t ] += fh * kk * zeta[ik-1] * f
+                        h_love[idx_n, idx_t] += fh * hh * zeta[ik-1] * f
+                        l_love[idx_n, idx_t] += fh * ll * zeta[ik-1] * f
+                        k_love[idx_n, idx_t] += fh * kk * zeta[ik-1] * f
             if verbose:
-                t2 = time.perf_counter()
-                print( "Harmonic degree n = " + str(n) + " ( " + str(t2-t1) + " s )" )
+                t2 = perf_counter()
+                print('Harmonic degree n = {} ({} s)'.format(n, t2 - t1))
                 t1 = t2
+
     elif itype==2:
         for idx_n in range(ndeg):
             for idx_t in range(nt):
@@ -610,33 +618,31 @@ def love_numbers(degrees, timesteps, loadtype, loadfcn, tau, output, order, verb
                 t = timesteps[idx_t]
                 omega = mp.mpf('2') * mp.pi / t
                 s     = iota * omega
-                hh,ll,kk = love_numbers_sampler(n,s,iload)
-                h_love[ idx_n, idx_t ] = hh
-                l_love[ idx_n, idx_t ] = ll
-                k_love[ idx_n, idx_t ] = kk
+                hh, ll, kk = love_numbers_sampler(n, s, iload, model_params)
+                h_love[idx_n, idx_t] = hh
+                l_love[idx_n, idx_t] = ll
+                k_love[idx_n, idx_t] = kk
+
             if verbose:
-                t2 = time.perf_counter()
-                print( "Harmonic degree n = " + str(n) + " ( " + str(t2-t1) + " s )" )
+                t2 = perf_counter()
+                print('Harmonic degree n = {} ({} s)'.format(n, t2 - t1))
                 t1 = t2
 
-    if ( itype==1 )| ( itype==3 ):
-        h_love = np.array(h_love.tolist(),dtype=float)
-        l_love = np.array(l_love.tolist(),dtype=float)
-        k_love = np.array(k_love.tolist(),dtype=float)
-    elif itype==2:
-        h_love = np.array(h_love.tolist(),dtype=complex)
-        l_love = np.array(l_love.tolist(),dtype=complex)
-        k_love = np.array(k_love.tolist(),dtype=complex)
+    if itype == 1 or itype == 3:
+        h_love = array(h_love.tolist(), dtype=float)
+        l_love = array(l_love.tolist(), dtype=float)
+        k_love = array(k_love.tolist(), dtype=float)
+
+    elif itype == 2:
+        h_love = array(h_love.tolist(), dtype=complex)
+        l_love = array(l_love.tolist(), dtype=complex)
+        k_love = array(k_love.tolist(), dtype=complex)
 
     return h_love, l_love, k_love
 
-
-
-
-
-#%% Main file
+# Main file
+'''
 if __name__ == "__main__":
-    
     # Read parameters from PARAMS.TOML file
     params = tomlload(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'params.toml'))
 
@@ -647,3 +653,4 @@ if __name__ == "__main__":
         COLUMNS, UNITS, MODEL, RAD, RHO, RIG, VIS = read_model_bm(fname)
     else:
         COLUMNS, UNITS, MODEL, LAMBDA, MU, K, SIGMA, Y, RIG, VIS = read_model_pp(fname)
+'''
