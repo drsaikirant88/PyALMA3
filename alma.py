@@ -23,7 +23,7 @@ from os.path import join, dirname, abspath
 from joblib import Parallel, delayed
 from time import perf_counter
 # Numpy
-from numpy import ndarray, array, round
+from numpy import ndarray, array, round, loadtxt, vstack, power, gradient
 # Math
 from math import floor
 # MPMATH
@@ -699,24 +699,120 @@ def love_numbers(degrees, timesteps, loadtype, loadfcn, tau, model_params, outpu
 
     return h_love, l_love, k_love
 
+# Read Planet Profile Model
+#%% Read velocity model from PlanetProfile v2.0+
+def read_model_pp(fname):
+    print('Reading model from PlanetProfile output...')
+
+    # Read file
+    with open(fname, 'r') as f:
+        #modelLabel = f.readline()
+        nHeadLines = int(f.readline().split('=')[-1])
+
+    # Read data
+    P_MPa, T_K, r_m, phase, rho_kgm3, Cp_JkgK, alpha_pK, \
+    g_ms2, phi_frac, sigma_Sm, kTherm_WmK, VP_kms, VS_kms, \
+    QS, KS_GPa, GS_GPa, Ppore_MPa, rhoMatrix_kgm3, \
+    rhoPore_kgm3, MLayer_kg, VLayer_m3, Htidal_Wm3 \
+        = loadtxt(fname, skiprows=nHeadLines, unpack=True)
+
+    # List of variable names
+    COLUMNS = ['P', 'T', 'r', 'phase', 'rho', 'Cp', 'alpha',
+    'g', 'phi', 'sigma', 'kTherm', 'VP', 'VS',
+    'QS', 'KS', 'GS', 'Ppore', 'rhoMatrix',
+    'rhoPore', 'MLayer', 'VLayer', 'Htidal']
+    
+    # List of data units
+    UNITS = ['MPa', 'K', 'm', '', 'kg m-3', 'J kg-1 K-1', 'K-1',
+    'm s-2', '-', 'S m-1', 'W m-1 K-1', 'km s-1', 'km s-1',
+    '', 'GPa', 'GPa', 'MPa', 'kg m-3',
+    'kg m-3', 'kg', 'm3', 'W m-3']
+
+    # Combine data into columns to reuse existing infrastructure
+    MODEL = vstack([P_MPa, T_K, r_m, phase, rho_kgm3, Cp_JkgK, alpha_pK,
+    g_ms2, phi_frac, sigma_Sm, kTherm_WmK, VP_kms, VS_kms,
+    QS, KS_GPa, GS_GPa, Ppore_MPa, rhoMatrix_kgm3,
+    rhoPore_kgm3, MLayer_kg, VLayer_m3, Htidal_Wm3]).T
+
+    # Check GPA and MPA to Pa
+    changeheader = ['P', 'VP', 'VS', 'r', 'rho', 'KS', 'GS']
+    for index, (header, unit) in enumerate(zip(COLUMNS, UNITS)):
+        if header in changeheader:
+            if unit.lower() == 'mpa':
+                UNITS[index] = 'Pa'
+                MODEL[:, index] = MODEL[:, index] * 1e6
+
+            elif unit.lower() == 'gpa':
+                UNITS[index] = 'Pa'
+                MODEL[:, index] = MODEL[:, index] * 1e9
+
+            elif unit.lower() == 'km':
+                UNITS[index] = 'm'
+                MODEL[:, index] = MODEL[:, index] * 1e3
+
+            elif unit.lower() == 'km s-1':
+                UNITS[index] = 'm s-1'
+                MODEL[:, index] = MODEL[:, index] * 1e3
+
+    ## Calculate elastic parameters
+    # LAMBDA = rho (Vp^2 - Vs^2)
+    LAMBDA = MODEL[:, COLUMNS.index('rho')] * (power(MODEL[:, COLUMNS.index('VP')], 2) - power(MODEL[:, COLUMNS.index('VS')], 2))
+
+    # MU = rho Vs^2
+    MU = MODEL[:, COLUMNS.index('rho')] * power(MODEL[:, COLUMNS.index('VS')], 2)
+
+    # Bulk Modulus K = lambda + 2/3 mu
+    K = LAMBDA + 2 * MU / 3
+
+    # Poissons ratio sigma = lambda / 2*(lambda + mu)
+    SIGMA = LAMBDA / (2 * LAMBDA + 2* MU)
+
+    # Youngs modulus Y = lambda (1 - 2 sigma) + 2 mu
+    Y = LAMBDA * (1 - 2 * SIGMA) + 2 * MU
+
+    # Rigidity RIG = 2/3 mu
+    RIG = 2 * MU / 3
+
+    # Viscosity VIS = RIG / GRAD(Vs)
+    VIS = RIG / gradient(MODEL[:, COLUMNS.index('VS')], MODEL[:, COLUMNS.index('r')])
+
+    # Return output variables
+    return {'columns': COLUMNS, 
+            'units': UNITS,
+            'model': MODEL,
+            'lambda': LAMBDA,
+            'mu': MU, 
+            'k': K,
+            'sigma': SIGMA,
+            'y': Y,
+            'rig': RIG,
+            'vis': VIS}
+
 # Main file
 # need to complete this
 def run_main():
 
-    params = tomlload(join(dirname(abspath(__file__)), 'params.toml'))
+    alma_params = tomlload(join(dirname(abspath(__file__)), 'params.toml'))
+
+    # Read PP model
+    model = read_model_pp(abspath(alma_params['filename']))
+
+    # Build model for alma
+    # @TODO: Need to write a function for this
+    rheology, params = [], []
+
+    model_params = build_model(model['model'][:, model['columns'].index('r')],
+                               model['model'][:, model['columns'].index('rho')],
+                               model['mu'],
+                               model['vis'],
+                               rheology,
+                               params,
+                               ndigits = alma_params['num_digits'],
+                               verbose = alma_params['verbose'])
 
     return
 
 '''
 if __name__ == "__main__":
-    # Read parameters from PARAMS.TOML file
-    params = tomlload(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'params.toml'))
-
-    # Read input model
-    fname = os.path.abspath(params['mode']['filename'])
-    if fname.split('.', -1)[1] == 'bm':
-        # TODO: check this part. need to add parameters to get velocities from rigidity
-        COLUMNS, UNITS, MODEL, RAD, RHO, RIG, VIS = read_model_bm(fname)
-    else:
-        COLUMNS, UNITS, MODEL, LAMBDA, MU, K, SIGMA, Y, RIG, VIS = read_model_pp(fname)
+    
 '''
