@@ -16,21 +16,34 @@ v0.1: This is the initial conversion of FORTRAN to Python
 #%% Import Libraries
 from pyexpat import model
 from toml import load as tomlload
+from psutil import Process
 # Joblib
 from os import cpu_count
+from os.path import join, dirname, abspath
 from joblib import Parallel, delayed
 from time import perf_counter
 # Numpy
-from numpy import ndarray, array
+from numpy import ndarray, array, round
 # Math
 from math import floor
 # MPMATH
 from mpmath import mp
 from mpmath import binomial, matrix, factorial, eye, diag, lu_solve, log
 
-# Prallel
-#parallel = True if cpu_count() > 2 else False
-parallel = False
+# Helper function to kill spawned threads
+def clear_threads(mode, before=None, verbose=False):
+    current_process = Process()
+
+    if mode == 'start':
+        return set([p.pid for p in current_process.children(recursive=True)])
+    else:
+        after = set([p.pid for p in current_process.children(recursive=True)])
+
+        if verbose: print('  >> Clearing spawned threads.')
+        for subproc in after - before:
+            Process(subproc).terminate()
+
+    return
 
 #%% Initialize
 def initialize(ndigits):
@@ -83,7 +96,10 @@ def get_rheology(rheology, nla, params):
     return rheol, rpar
 
 #%% Build Model
-def build_model(r_in, rho_in, mu_in, eta_in, rheology, params, ndigits=128, verbose=True):
+def wrapper_layer(rho, ri_1, ri):
+    return rho * (ri_1 ** 3 - ri ** 3)
+
+def build_model(r_in, rho_in, mu_in, eta_in, rheology, params, ndigits=128, verbose=True, parallel=None):
     if verbose:
         print('> Initializing')
         print(f'  >> Setting precision: {ndigits}')
@@ -128,20 +144,34 @@ def build_model(r_in, rho_in, mu_in, eta_in, rheology, params, ndigits=128, verb
     # Planet Mass
     if verbose:
         print('  >> Computing mass of the planet')
-    '''
+
+    # Sanity check for parallel
+    if nla <= 10 and parallel is None:
+        parallel = False
+    
+    elif nla > 10 and parallel is None:
+        parallel = True
+    
+    else:
+        if bool(parallel):
+            parallel = parallel
+        else:
+            print(f'WARNING: parallel setting should be boolean, it is: {type(parallel)}.')
+            print('Reverting to serial operation.')
+            parallel = False
+    
     if parallel:
+        '''
         def wrapper_layer(rho, ri_1, ri):
             return rho * (ri_1 ** 3 - ri ** 3)
-
-        if verbose: vbse=1
-
-        mlayer = Parallel(verbose=vbse, n_jobs=-1)(delayed(wrapper_layer)(rho[i], r[i+1], r[i]) for i in range(nla))
+        '''
+        mlayer = Parallel(verbose=0, n_jobs=-1)(delayed(wrapper_layer)(rho[i], r[i+1], r[i]) for i in range(nla))
         mlayer = matrix(mlayer)
     
     else:
         for i in range(nla):
             mlayer[i] = rho[i] * (r[i + 1] ** 3 - r[i] ** 3)
-    '''
+    
     for i in range(nla):
             mlayer[i] = rho[i] * (r[i + 1] ** 3 - r[i] ** 3)
     
@@ -287,40 +317,26 @@ def salzer_weights(order, verbose=True):
 
     if type(order) != int:
         raise TypeError("salzer_weights: order must be integer")
-
-    # Wrapper
-    def wrapper_salzer(k, m):
-        j1 = floor((k + 1) / 2)
-        j2 = min(k, m)
-
-        zeta = mp.mpf('0.0')
-
-        for j in range(j1, j2 + 1):
-            fattm = factorial(m)
-
-            q1 = binomial(m, j)
-            q2 = binomial(2 * j, j)
-            q3 = binomial(j, k - j)
-
-            zeta = zeta + j ** (m + 1) / fattm * q1 * q2 * q3
-        
-        if (m + k) % 2 != 0:
-            zeta = -zeta
-        
-        return zeta
         
     #m = order
     zeta = matrix(2 * order, 1)
 
-    if parallel:
-        if verbose: vbse = 1
-        zeta = Parallel(verbose=vbse, n_jobs=-1)(delayed(wrapper_salzer)(k, order) for k in range(1, 2 * order + 1))
-        # Convert parallel output list to mpmath matrix
-        zeta = matrix(zeta)
-    
-    else:
-        for k in range(1, 2 * order + 1):
-            zeta[k - 1] = wrapper_salzer(k, order)
+    for k in range(1, 2 * order + 1):
+
+        j1 = floor((k + 1) / 2)
+        j2 = min(k, order)
+
+        for j in range(j1, j2 + 1):
+            fattm = factorial(order)
+
+            q1 = binomial(order, j)
+            q2 = binomial(2 * j, j)
+            q3 = binomial(j, k - j)
+
+            zeta[k - 1] = zeta[k - 1] + j ** (order + 1) / fattm * q1 * q2 * q3
+        
+        if (order + k) % 2 != 0:
+            zeta[k - 1] = -zeta[k - 1]
 
     return zeta
 
@@ -483,36 +499,16 @@ def love_numbers_sampler(n, s, iload, model_params, verbose=True):
     mass  = model_params['mass']
     rpar  = model_params['rpar']
     rheol = model_params['rheol']
-    
-    # Wrapper
-    def wrapper_lnsampler(s, n, mu, eta, rheol, rpar, r, r1, rho, mu_s, gra, gra1, G):
-        #mu_s = complex_rigidity(s, mu[i], eta[i], rheol[i], rpar[i, :])
-        #Ydir = direct_matrix (n, r[i + 1], rho[i], mu_s, gra[i + 1])
-        #Yinv = inverse_matrix(n, r[i], rho[i], mu_s, gra[i])
-        #lam = lam * (Ydir * Yinv)
-        mu_s = complex_rigidity(s, mu, eta, rheol, rpar)
-        #Ydir = direct_matrix (n, r1, rho, mu_s, gra1, G)
-        #Yinv = inverse_matrix(n, r, rho, mu_s, gra, G)
-
-        return direct_matrix (n, r1, rho, mu_s, gra1, G) * inverse_matrix(n, r, rho, mu_s, gra, G)
 
     # Build the propagator product
     nla = len(rho)
 
-    if parallel:
-        if verbose: vbse=1
-        lammult = Parallel(n_jobs=-1, verbose=vbse)(delayed(wrapper_lnsampler)(s, n, mu[i], eta[i], rheol[i], rpar[i, :], r[i], r[i + 1], rho[i], mu_s, gra[i], gra[i + 1], G) for i in range(nla - 1, 0, -1))
-
-        for i in range(nla - 1, 0, -1):
-            lam = lam * lammult[i]
-
-    else:
-        for i in range(nla - 1, 0, -1):
-            mu_s = complex_rigidity(s, mu[i], eta[i], rheol[i], rpar[i,:])
-            #Ydir = direct_matrix(n, r[i + 1], rho[i], mu_s, gra[i + 1], G)
-            #Yinv = inverse_matrix(n, r[i], rho[i], mu_s, gra[i], G)
-            #lam = lam * (Ydir * Yinv)
-            lam = lam * (direct_matrix(n, r[i + 1], rho[i], mu_s, gra[i + 1], G) * inverse_matrix(n, r[i], rho[i], mu_s, gra[i], G))
+    for i in range(nla - 1, 0, -1):
+        #Ydir = direct_matrix(n, r[i + 1], rho[i], mu_s, gra[i + 1], G)
+        #Yinv = inverse_matrix(n, r[i], rho[i], mu_s, gra[i], G)
+        #lam = lam * (Ydir * Yinv)
+        mu_s = complex_rigidity(s, mu[i], eta[i], rheol[i], rpar[i,:])
+        lam = lam * (direct_matrix(n, r[i + 1], rho[i], mu_s, gra[i + 1], G) * inverse_matrix(n, r[i], rho[i], mu_s, gra[i], G))
 
     if rheol[0] == 0:
         bc = fluid_core_bc(n, r[1], rho[0], gra[1], G)
@@ -548,92 +544,155 @@ def love_numbers_sampler(n, s, iload, model_params, verbose=True):
     return hh, ll, kk
 
 # Compute love numbers
-def love_numbers(degrees, timesteps, loadtype, loadfcn, tau, model_params, output, order, verbose=True):
+# Putting this wrapper so it's easy to parallelize
+def wrapper_love_numbers_timestep(idx_n, params, t1=0, verbose=False):
+
+    # Dummy initiator
+    h_love = matrix(1, params['nt'])
+    l_love = matrix(1, params['nt'])
+    k_love = matrix(1, params['nt'])
+
+    # Harmonic degree
+    n = params['degrees'][idx_n]
+
+    if params['itype'] == 1 or params['itype'] == 3:
+        for idx_t in range(params['nt']): #range(nt):
+
+            t = params['timesteps'][idx_t] #timesteps[idx_t]
+            f = log(2) / t
+
+            for ik in range(1, 2*params['order'] + 1): #range(1, 2*order + 1):
+
+                s = f * ik
+                #hh, ll, kk = love_numbers_sampler(n, s, iload, model_params)
+                hh, ll, kk = love_numbers_sampler(n, s, params['iload'], params['model_params'])
+
+                if params['ihist'] == 1: #ihist == 1:
+                    fh = mp.mpf('1') / s
+
+                elif params['ihist'] == 2: #ihist == 2:
+                    fh = (mp.mpf('1') - mp.exp( -s * params['tau'] )) / (params['tau'] * s**2)
+
+                if params['itype'] == 3:
+                    #h_love[idx_n, idx_t] += fh * (s * hh) * params['zeta'][ik-1] * f
+                    #l_love[idx_n, idx_t] += fh * (s * ll) * params['zeta'][ik-1] * f
+                    #k_love[idx_n, idx_t] += fh * (s * kk) * params['zeta'][ik-1] * f
+                    
+                    h_love[idx_t] += fh * (s * hh) * params['zeta'][ik-1] * f
+                    l_love[idx_t] += fh * (s * ll) * params['zeta'][ik-1] * f
+                    k_love[idx_t] += fh * (s * kk) * params['zeta'][ik-1] * f
+
+                else:
+                    #h_love[idx_n, idx_t] += fh * hh * params['zeta'][ik-1] * f
+                    #l_love[idx_n, idx_t] += fh * ll * params['zeta'][ik-1] * f
+                    #k_love[idx_n, idx_t] += fh * kk * params['zeta'][ik-1] * f
+                    
+                    h_love[idx_t] += fh * hh * params['zeta'][ik-1] * f
+                    l_love[idx_t] += fh * ll * params['zeta'][ik-1] * f
+                    k_love[idx_t] += fh * kk * params['zeta'][ik-1] * f
+
+    elif params['itype'] == 2:
+        for idx_t in range(params['nt']):
+            t = params['timesteps'][idx_t]
+            omega = mp.mpf('2') * mp.pi / t
+            s     = params['iota'] * omega
+            hh, ll, kk = love_numbers_sampler(n, s, params['iload'], params['model_params'])
+            
+            #h_love[idx_n, idx_t] = hh
+            #l_love[idx_n, idx_t] = ll
+            #k_love[idx_n, idx_t] = kk
+
+            h_love[idx_t] = hh
+            l_love[idx_t] = ll
+            k_love[idx_t] = kk
+
+    if verbose:
+        t2 = perf_counter()
+        print('Harmonic degree n = {} ({} s)'.format(n, round(t2 - t1, 2)))
+        t1 = t2
+
+    return {'h_love': h_love, 
+            'l_love': l_love, 
+            'k_love': k_love}, t1
+
+def love_numbers(degrees, timesteps, loadtype, loadfcn, tau, model_params, output, order, verbose=True, parallel=None):
+
+    # Set parameters in dict
+    params = {'nt': len(timesteps),
+              'ndeg': len(degrees),
+              'iota': model_params['iota'],
+              'iload': parse_loadtype(loadtype),
+              'itype': parse_outputtype(output),
+              'tau': tau,
+              'order': order,
+              'degrees': degrees,
+              'timesteps': matrix(timesteps),
+              'model_params': model_params}
 
     # Parse loading, output and hist types
-    iload = parse_loadtype(loadtype)
-    itype = parse_outputtype(output)
-
-    if itype != 2:
-        ihist = parse_histtype(loadfcn)
+    if params['itype'] != 2:
+        #ihist = parse_histtype(loadfcn)
+        params['ihist'] = parse_histtype(loadfcn)
     else:
-        ihist = 0
-
-    nt   = len(timesteps)
-    ndeg = len(degrees)
-
-    timesteps  = matrix(timesteps)
-    
-    # iota
-    iota = model_params['iota']
+        #ihist = 0
+        params['ihist'] = 0
 
     # Allocate output arrays
-    h_love = matrix(ndeg, nt)
-    l_love = matrix(ndeg, nt)
-    k_love = matrix(ndeg, nt)
-
+    h_love = matrix(params['ndeg'], params['nt'])
+    l_love = matrix(params['ndeg'], params['nt'])
+    k_love = matrix(params['ndeg'], params['nt'])
+    
     # Compute LNs
     t1 = perf_counter()
 
-    if itype == 1 or itype == 3:
+    # Parallelize if ndeg > 2
+    params['zeta'] = salzer_weights(order, verbose=verbose)
 
-        zeta = salzer_weights(order)
+    # Sanity check for parallel
+    if parallel is None and params['ndeg'] > 2 and cpu_count() > 2:
+        parallel = True
+    elif parallel is None and (params['ndeg'] <= 2 or cpu_count() <= 2):
+        parallel = False
+    else:
+        if type(parallel) == bool:
+            parallel = parallel
+        else:
+            print(f'WARNING: parallel setting should be boolean, it is: {type(parallel)}.')
+            print('Reverting to serial operation.')
+            parallel = False
 
-        for idx_n in range(ndeg):
-            n = degrees[idx_n]
-            
-            for idx_t in range(nt):
+    if parallel:
+        if verbose: print('> Computing Love Numbers - Parallel')
 
-                t = timesteps[idx_t]
-                f = log(2) / t
+        # Safety net if code doesn't clear spawned threads
+        process_before = clear_threads('start')
 
-                for ik in range(1, 2*order + 1):
-                    s = f * ik
-                    hh, ll, kk = love_numbers_sampler(n, s, iload, model_params)
+        results = Parallel(verbose=0, n_jobs=-1, backend='threading')(delayed(wrapper_love_numbers_timestep)(idx_n, params) for idx_n in range(params['ndeg']))
 
-                    if ihist == 1:
-                        fh = mp.mpf('1') / s
+        _ = clear_threads('end', before=process_before, verbose=verbose)
 
-                    elif ihist == 2:
-                        fh = (mp.mpf('1') - mp.exp( -s * tau )) / (tau * s**2)
+        # splice all results
+        for idx_n, lovens in enumerate(results):
+            h_love[idx_n, :] = lovens[0]['h_love']
+            l_love[idx_n, :] = lovens[0]['l_love']
+            k_love[idx_n, :] = lovens[0]['k_love']
 
-                    if itype == 3:
-                        h_love[idx_n, idx_t] += fh * (s * hh) * zeta[ik-1] * f
-                        l_love[idx_n, idx_t] += fh * (s * ll) * zeta[ik-1] * f
-                        k_love[idx_n, idx_t] += fh * (s * kk) * zeta[ik-1] * f
+    else:
+        if verbose: print('> Computing Love Numbers - Serial')
 
-                    else:
-                        h_love[idx_n, idx_t] += fh * hh * zeta[ik-1] * f
-                        l_love[idx_n, idx_t] += fh * ll * zeta[ik-1] * f
-                        k_love[idx_n, idx_t] += fh * kk * zeta[ik-1] * f
-            if verbose:
-                t2 = perf_counter()
-                print('Harmonic degree n = {} ({} s)'.format(n, t2 - t1))
-                t1 = t2
+        for idx_n in range(params['ndeg']):
+            lovens, t1 = wrapper_love_numbers_timestep(idx_n, params, t1, verbose=verbose)
 
-    elif itype==2:
-        for idx_n in range(ndeg):
-            for idx_t in range(nt):
-                n = degrees[idx_n]
-                t = timesteps[idx_t]
-                omega = mp.mpf('2') * mp.pi / t
-                s     = iota * omega
-                hh, ll, kk = love_numbers_sampler(n, s, iload, model_params)
-                h_love[idx_n, idx_t] = hh
-                l_love[idx_n, idx_t] = ll
-                k_love[idx_n, idx_t] = kk
+            h_love[idx_n, :] = lovens['h_love']
+            l_love[idx_n, :] = lovens['l_love']
+            k_love[idx_n, :] = lovens['k_love']
 
-            if verbose:
-                t2 = perf_counter()
-                print('Harmonic degree n = {} ({} s)'.format(n, t2 - t1))
-                t1 = t2
-
-    if itype == 1 or itype == 3:
+    if params['itype'] == 1 or params['itype'] == 3:
         h_love = array(h_love.tolist(), dtype=float)
         l_love = array(l_love.tolist(), dtype=float)
         k_love = array(k_love.tolist(), dtype=float)
 
-    elif itype == 2:
+    elif params['itype'] == 2:
         h_love = array(h_love.tolist(), dtype=complex)
         l_love = array(l_love.tolist(), dtype=complex)
         k_love = array(k_love.tolist(), dtype=complex)
@@ -641,6 +700,13 @@ def love_numbers(degrees, timesteps, loadtype, loadfcn, tau, model_params, outpu
     return h_love, l_love, k_love
 
 # Main file
+# need to complete this
+def run_main():
+
+    params = tomlload(join(dirname(abspath(__file__)), 'params.toml'))
+
+    return
+
 '''
 if __name__ == "__main__":
     # Read parameters from PARAMS.TOML file
