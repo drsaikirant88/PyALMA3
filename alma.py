@@ -23,12 +23,15 @@ from os.path import join, dirname, abspath
 from joblib import Parallel, delayed
 from time import perf_counter
 # Numpy
-from numpy import ndarray, array, round, loadtxt, vstack, power, gradient
+from numpy import (ndarray, array, round, loadtxt, 
+                    vstack, power, gradient, arange,
+                    logspace, linspace, geomspace)
 # Math
 from math import floor
 # MPMATH
 from mpmath import mp
-from mpmath import binomial, matrix, factorial, eye, diag, lu_solve, log
+from mpmath import (binomial, matrix, factorial, eye, 
+                    diag, lu_solve, log)
 
 # Helper function to kill spawned threads
 def clear_threads(mode, before=None, verbose=False):
@@ -809,6 +812,41 @@ def run_main():
                                params,
                                ndigits = alma_params['num_digits'],
                                verbose = alma_params['verbose'])
+
+    # Harmonic degrees
+    n = arange(alma_params['dmin'], alma_params['dmax'], alma_params['dstep'])
+    
+    # Time step
+    if alma_params['time'] == 'lin':
+        t = linspace(alma_params['timestart'], 
+                     alma_params['timeend'], 
+                     alma_params['tpoints'],
+                     endpoint=True)
+    elif alma_params['time'] == 'log':
+        t = logspace(alma_params['timestart'], 
+                     alma_params['timeend'], 
+                     alma_params['tpoints'],
+                     endpoint=True)
+    elif alma_params['time'] == 'geom':
+        t = geomspace(alma_params['timestart'], 
+                     alma_params['timeend'], 
+                     alma_params['tpoints'],
+                     endpoint=True)
+    else:
+        print(f'ERROR: Unknown scale for time: {alma_params["time"]}.')
+        print('Allowed values are: "log", "geom", "lin".')
+        exit()
+
+    # Compute love numbers
+    h, l, k = love_numbers(n, t, 
+                           alma_params['mode'], 
+                           alma_params['function'],
+                           alma_params['tau'],
+                           model_params,
+                           alma_params['type'],
+                           alma_params['gorder'],
+                           verbose = alma_params['verbose'],
+                           parallel = alma_params['parallel'])
 
     return
 

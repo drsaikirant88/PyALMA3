@@ -1,20 +1,18 @@
 # pyALMA3 parameters
 # Set all parameters here, following the TOML file structure
 
-## Models
-[model]
+## PP Model
 filename = '/mnt/e/OneDrive/Research/ALMA/pyalma/models/europa_alma.bm'
 
-# Number of layers
-num_layers = 6
-
 ## General Parameters
-[params]
 # Number of digits
 num_digits = 128
 
 # Order of Gaver method
 gorder = 8
+
+# tau
+tau = 0
 
 # Loading type: loading or tidal
 mode = 'tidal'
@@ -24,7 +22,7 @@ dmin  = 1
 dmax  = 10
 dstep = 1
 
-# Time scale: 'log', 'ext', 'lin'
+# Time scale: 'log', 'geom', 'lin'
 time = 'ext'
 
 # Time points minus 1
@@ -43,14 +41,9 @@ function_length = 1.0
 # Verbose
 verbose = true
 
-[output]
-# type: 'complex' or 'real'
+# Output type: 'complex' or 'real'
 type = 'complex'
 
-# format: LNs vs t (ln_vs_t)  or  LNs vs n (ln_vs_n)
-format = 'ln_vs_t'
-
-# Love number swithes output
-lnh = true
-lnl = true
-lnk = true
+# Force Parallel operation
+# If set to "None", code will auto-decide
+parallel = None
