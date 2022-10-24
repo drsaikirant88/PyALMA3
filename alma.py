@@ -15,6 +15,7 @@ v0.1: This is the initial conversion of FORTRAN to Python
 
 #%% Import Libraries
 from pyexpat import model
+from turtle import onclick
 from toml import load as tomlload
 from psutil import Process
 # Joblib
@@ -25,7 +26,8 @@ from time import perf_counter
 # Numpy
 from numpy import (ndarray, array, round, loadtxt, 
                     vstack, power, gradient, arange,
-                    logspace, linspace, geomspace)
+                    logspace, linspace, geomspace, 
+                    flipud, where, ones)
 # Math
 from math import floor
 # MPMATH
@@ -511,14 +513,14 @@ def love_numbers_sampler(n, s, iload, model_params, verbose=True):
         #Yinv = inverse_matrix(n, r[i], rho[i], mu_s, gra[i], G)
         #lam = lam * (Ydir * Yinv)
         mu_s = complex_rigidity(s, mu[i], eta[i], rheol[i], rpar[i,:])
-        lam = lam * (direct_matrix(n, r[i + 1], rho[i], mu_s, gra[i + 1], G) * inverse_matrix(n, r[i], rho[i], mu_s, gra[i], G))
+        lam = lam * (direct_matrix(int(n), r[i + 1], rho[i], mu_s, gra[i + 1], G) * inverse_matrix(int(n), r[i], rho[i], mu_s, gra[i], G))
 
     if rheol[0] == 0:
         bc = fluid_core_bc(n, r[1], rho[0], gra[1], G)
 
     else:
         mu_s = complex_rigidity(s, mu[0], eta[0], rheol[0], rpar[0, :])
-        Ydir = direct_matrix(n, r[1], rho[0], mu_s, gra[1], G) 
+        Ydir = direct_matrix(int(n), r[1], rho[0], mu_s, gra[1], G) 
         bc   = Ydir[:, 0:3]
 
     bs = surface_bc(n, r[nla], gra[nla], iload, G)
@@ -560,7 +562,7 @@ def wrapper_love_numbers_timestep(idx_n, params, t1=0, verbose=False):
 
     if params['itype'] == 1 or params['itype'] == 3:
         for idx_t in range(params['nt']): #range(nt):
-
+            #print(f'idx_t: {idx_t}')
             t = params['timesteps'][idx_t] #timesteps[idx_t]
             f = log(2) / t
 
@@ -596,6 +598,7 @@ def wrapper_love_numbers_timestep(idx_n, params, t1=0, verbose=False):
 
     elif params['itype'] == 2:
         for idx_t in range(params['nt']):
+            #print(f'idx_t: {idx_t} > {params["timesteps"][idx_t]}')
             t = params['timesteps'][idx_t]
             omega = mp.mpf('2') * mp.pi / t
             s     = params['iota'] * omega
@@ -670,7 +673,9 @@ def love_numbers(degrees, timesteps, loadtype, loadfcn, tau, model_params, outpu
         # Safety net if code doesn't clear spawned threads
         process_before = clear_threads('start')
 
-        results = Parallel(verbose=0, n_jobs=-1, backend='threading')(delayed(wrapper_love_numbers_timestep)(idx_n, params) for idx_n in range(params['ndeg']))
+        pverbose = 3 if verbose else 0
+
+        results = Parallel(verbose=pverbose, n_jobs=-1, backend='threading')(delayed(wrapper_love_numbers_timestep)(idx_n, params) for idx_n in range(params['ndeg']))
 
         _ = clear_threads('end', before=process_before, verbose=verbose)
 
@@ -684,6 +689,9 @@ def love_numbers(degrees, timesteps, loadtype, loadfcn, tau, model_params, outpu
         if verbose: print('> Computing Love Numbers - Serial')
 
         for idx_n in range(params['ndeg']):
+            if verbose:
+                print(f'   >> processing {idx_n + 1} of {params["ndeg"]}')
+            
             lovens, t1 = wrapper_love_numbers_timestep(idx_n, params, t1, verbose=verbose)
 
             h_love[idx_n, :] = lovens['h_love']
@@ -704,12 +712,15 @@ def love_numbers(degrees, timesteps, loadtype, loadfcn, tau, model_params, outpu
 
 # Read Planet Profile Model
 #%% Read velocity model from PlanetProfile v2.0+
-def read_model_pp(fname):
-    print('Reading model from PlanetProfile output...')
+def read_model_pp(fname, verbose=False):
+    # TODO: correct equations for MU, VIS and RIGIDITY
+
+    if verbose:
+        print('> Reading model from PlanetProfile output')
 
     # Read file
     with open(fname, 'r') as f:
-        #modelLabel = f.readline()
+        modelLabel = f.readline()
         nHeadLines = int(f.readline().split('=')[-1])
 
     # Read data
@@ -757,12 +768,21 @@ def read_model_pp(fname):
                 UNITS[index] = 'm s-1'
                 MODEL[:, index] = MODEL[:, index] * 1e3
 
-    ## Calculate elastic parameters
-    # LAMBDA = rho (Vp^2 - Vs^2)
-    LAMBDA = MODEL[:, COLUMNS.index('rho')] * (power(MODEL[:, COLUMNS.index('VP')], 2) - power(MODEL[:, COLUMNS.index('VS')], 2))
+    # Round radius
+    MODEL[:, COLUMNS.index('r')] = round(MODEL[:, COLUMNS.index('r')], 0)
 
-    # MU = rho Vs^2
-    MU = MODEL[:, COLUMNS.index('rho')] * power(MODEL[:, COLUMNS.index('VS')], 2)
+    # Flip model: core at top and surface at bottom
+    if MODEL[0, COLUMNS.index('r')] > MODEL[-1, COLUMNS.index('r')]:
+        MODEL = flipud(MODEL)
+
+    ## Calculate elastic parameters
+    # LAMBDA = rho (Vp^2 - 2 * Vs^2)
+    # 1st Lame parameter
+    LAMBDA = MODEL[:, COLUMNS.index('rho')] * (power(MODEL[:, COLUMNS.index('VP')], 2) - 2. * power(MODEL[:, COLUMNS.index('VS')], 2))
+
+    # shear modulus G or MU = rho Vs^2
+    #MU = MODEL[:, COLUMNS.index('rho')] * power(MODEL[:, COLUMNS.index('VS')], 2)
+    MU = MODEL[:, COLUMNS.index('rho')] * power(MODEL[:, COLUMNS.index('VP')], 2)
 
     # Bulk Modulus K = lambda + 2/3 mu
     K = LAMBDA + 2 * MU / 3
@@ -770,14 +790,24 @@ def read_model_pp(fname):
     # Poissons ratio sigma = lambda / 2*(lambda + mu)
     SIGMA = LAMBDA / (2 * LAMBDA + 2* MU)
 
-    # Youngs modulus Y = lambda (1 - 2 sigma) + 2 mu
-    Y = LAMBDA * (1 - 2 * SIGMA) + 2 * MU
+    # Youngs modulus Y = 2 * MU * (1 + sigma)
+    Y = 2. * MU * (1 + SIGMA)
 
     # Rigidity RIG = 2/3 mu
     RIG = 2 * MU / 3
 
     # Viscosity VIS = RIG / GRAD(Vs)
-    VIS = RIG / gradient(MODEL[:, COLUMNS.index('VS')], MODEL[:, COLUMNS.index('r')])
+    gradvs = abs(gradient(MODEL[:, COLUMNS.index('VS')], MODEL[:, COLUMNS.index('r')]))
+    gradvs[gradvs == 0.] = 1e-30
+
+    VIS = RIG / gradvs
+
+    # JUST FOR TESTING PP MODELS
+    # SET MU and VIS to min value
+    #VIS[VIS == 0.] = min(VIS[VIS>0]) / 10000
+    #MU[MU == 0.] = min(MU[MU>0]) / 10000
+    #VIS[VIS == 0.] = (0. * where(VIS==0.)[0] + 1.) * linspace(min(VIS[VIS>0]) - 20000, min(VIS[VIS>0]) - 150000, num=len(where(VIS==0.)[0]))
+    #MU[MU == 0.] = (0. * where(MU==0.)[0] + 1.) * linspace(min(MU[MU>0]) - 20000, min(MU[MU>0]) - 150000, num=len(where(MU==0.)[0]))
 
     # Return output variables
     return {'columns': COLUMNS, 
@@ -791,18 +821,245 @@ def read_model_pp(fname):
             'rig': RIG,
             'vis': VIS}
 
+# Infer rheology from pp model
+# Type should be from core to surface
+def infer_rheology_pp(model, structure=None, layer_radius=None, layer_radius_index=False, verbose=False):
+    '''model         - model object that is returned by "read_model_pp"
+       structure     - rheologies of layers
+                        '0 : "fluid"
+                        '1 : "elastic"
+                        '2 : "maxwell"
+                        '3 : "newton"
+                        '4 : "kelvin"
+                        '5 : "burgers"
+                        '6 : "andrade"
+        layer_radius - manually define transition in layers. For example: this can be defined as [50, 100]. This will be treated as a 3 layer model with first layer from 1 - 50m, second layer from 50 - 100m, and final layer from 100m to end of model file. Here, unit should be same as unit of radius. Always define layers from inside to outside for a planet profile model.
+
+        layer_radius_index - boolean. If set to true, layer_radius values will be treated as index. In the above example, the model is treated as a 3 layered model. First layer is from index 0 - 50, second layer from 51 - 100, final later from 100 to length of model.
+    '''
+    
+    if verbose:
+        print('> Generating rheology for planet profile model')
+
+    if layer_radius is False or layer_radius is None:
+        layer_radius = None
+
+    if layer_radius is None and structure is None:
+        print('  >> ERROR: Layer rheology structure of model (from core to surface) should be defined when using Planet Profile model file.\nExample: for enceladus this is defined as a list ["elastic", "newton", "maxwell"] corresponding to 3 layers: core, water, ice.')
+        print('\nRheology structure can be defined as code or name:')
+        print('Code : Name')
+        print('0 : "fluid"')
+        print('1 : "elastic"')
+        print('2 : "maxwell"')
+        print('3 : "newton"')
+        print('4 : "kelvin"')
+        print('5 : "burgers"')
+        print('6 : "andrade"')
+        raise ValueError()
+    
+    # Sanity check for structure
+    print('  >> Verifying validity of structure rheologies')
+    if structure is None:
+        print('  >> ERROR: Rheology structure must be defined')
+        raise ValueError()
+
+    if array([type(i) is str for i in structure]).all():
+        for i in structure:
+            if i not in ['fluid', 'elastic', 'maxwell', 'newton', 'kelvin', 'burgers', 'andrade']:
+                print(f'  >> ERROR: Unknown rheology: {i}')
+                raise ValueError()
+    
+    elif array([type(i) is int for i in structure]).all() or array([type(i) is float for i in structure]).all():
+        # Convert to int
+        structure = [int(i) for i in structure]
+
+        for i in structure:
+            if i < 0 or i > 6:
+                print(f'  >> ERROR: Unknown rheology code: {i}. Code should be between [0, 6]')
+                raise ValueError()
+    
+    else:
+        print(f'  >> ERROR: Unknown data type for rheology. Accepted values are string or integer code.')
+        print('\nRheology structure can be defined as code or name:')
+        print('Code : Name')
+        print('0 : "fluid"')
+        print('1 : "elastic"')
+        print('2 : "maxwell"')
+        print('3 : "newton"')
+        print('4 : "kelvin"')
+        print('5 : "burgers"')
+        print('6 : "andrade"')
+        raise ValueError()
+
+    if layer_radius is None and structure is not None:
+    
+        # Check if layers are already defined in radius
+        layers = where(abs(model['model'][:, model['columns'].index('r')][:-1] - model['model'][:, model['columns'].index('r')][1:]) == 0.)[0]
+        
+        if len(layers) == 0:
+            print('  >> Could not find pre-defined layers from radius.')
+            print('     Infering layers from density profile.')
+
+            # Get gradient to infer layers
+            rhograd = where(round(abs(gradient(model['model'][:, model['columns'].index('rho')], model['model'][:, model['columns'].index('r')])), 0) > 0.)[0]
+
+            if len(rhograd) == 0:
+                print('  >> ERROR: Could not infer layers from density profile.')
+                print('     This model requires layer information which can be passed through parameter "layer_radius" (from core to surface).')
+                raise ValueError()
+            
+            rhogradidx = abs(rhograd[:-1] - rhograd[1:])
+            rhogradidx = where(rhogradidx == 1.)[0]
+
+            # Add 1 to get index of rhograd
+            if len(rhogradidx) != 0:
+                rhogradidx += 1
+            
+            # Remove these values
+            mask = ones(len(rhograd), bool)
+            mask[rhogradidx] = 0
+            rhograd = rhograd[mask]
+
+            # Assign rheology
+            rheo = []
+            
+            if len(structure) != len(rhograd) + 1:
+                print(f'  >> ERROR: number of inferred layers={len(rhograd) + 1} is not equal to number of layered rheology structures={len(structure)}.')
+                print('      Error can be mitigated by manually defining boundaries of layers and structure of each layer.')
+                raise ValueError()
+
+            for layer in range(len(structure)):
+                if layer == 0:
+                    rheo = [structure[layer] for i in range(rhograd[layer] + 1)]
+                
+                # Intermediate layers
+                if layer > 0 and layer < len(structure) - 1:
+                    rheo = rheo + [structure[layer] for i in range((rhograd[layer] + 1) - (rhograd[layer - 1] + 1))]
+                
+                # Last layer
+                if layer == len(structure) - 1:
+                    rheo = rheo + [structure[layer] for i in range(model['model'].shape[0] - (rhograd[-1] + 1))]
+            
+            # Assign parameters
+            params = 0. * ones((len(rheo), 2))
+        
+        else: # pre-defined layers exist
+            print(f'  >> Found {len(layers) + 1} pre-defined layers in model radius')
+
+            if len(structure) != len(layers) + 1:
+                print(f'  >> ERROR: number of pre-defined layers={len(layers) + 1} is not equal to number of layered rheology structures={len(structure)}.')
+                raise ValueError()
+            
+            for layer in range(len(structure)):
+                if layer == 0:
+                    rheo = [structure[layer] for i in range(layers[layer] + 1)]
+                
+                # Intermediate layers
+                if layer > 0 and layer < len(structure) - 1:
+                    rheo = rheo + [structure[layer] for i in range((layers[layer] + 1) - (layers[layer - 1] + 1))]
+                
+                # Last layer
+                if layer == len(structure) - 1:
+                    rheo = rheo + [structure[layer] for i in range(model['model'].shape[0] - (layers[-1] + 1))]
+            
+            # Assign parameters
+            params = 0. * ones((len(rheo), 2))
+    
+    else: # User defined layers and structure
+        if type(layer_radius_index) is not bool:
+            print('  >> ERROR: "layer_radius_index" should be boolean')
+            raise ValueError()
+
+        if len(layer_radius) + 1 != len(structure):
+            print(f'  >> ERROR: number of layers + 1={len(layer_radius) + 1} is not equal to number of number of layered rheology structures={len(structure)}')
+            print('     "layer_radius" should have values')
+            raise ValueError()
+        
+        if layer_radius_index:
+            print(f'  >> Setting layered rheology at index: {layer_radius}')
+            
+            layer_radius = array(layer_radius)
+            if min(layer_radius) < 0 or max(layer_radius) > model['model'].shape[0]:
+                print(f'  >> ERROR: layer_radius index value: {min(layer_radius)}, {max(layer_radius)} not within range: [0, {model["model"].shape[0]}].')
+                raise ValueError()
+            
+            if ((layer_radius[1:] - layer_radius[:-1]) < 0).any():
+                print('  >> ERROR: layer_radius should be monotonically increasing.')
+                raise ValueError()
+
+            for layer in range(len(structure)):
+                if layer == 0:
+                    rheo = [structure[layer] for i in range(layer_radius[layer] + 1)]
+                
+                # Intermediate layers
+                if layer > 0 and layer < len(structure) - 1:
+                    rheo = rheo + [structure[layer] for i in range((layer_radius[layer] + 1) - (layer_radius[layer - 1] + 1))]
+                
+                # Last layer
+                if layer == len(structure) - 1:
+                    rheo = rheo + [structure[layer] for i in range(model['model'].shape[0] - (layer_radius[-1] + 1))]
+            
+            # Assign parameters
+            params = 0. * ones((len(rheo), 2))
+        
+        else:
+            print(f'  >> Setting layered rheology at radius: {layer_radius}')
+
+            # sanity check
+            layer_radius = array(layer_radius)
+            if ((layer_radius[1:] - layer_radius[:-1]) < 0).any():
+                print('ERROR: layer_radius should be monotonically increasing.')
+                raise ValueError()
+            
+            # Get closest index to defined layer_radius
+            layers = []
+            rads = model['model'][:, model['columns'].index('r')]
+            for layer in layer_radius:
+                if layer < min(rads) or layer > max(rads):
+                    print(f'ERROR: layer_radius: {layer} is beyond model range: {min(rads)}, {max(rads)}')
+                    raise ValueError()
+
+                vals = abs(rads - layer)
+
+                layers.append(where(vals == min(vals))[0][0])
+            
+
+            for layer in range(len(structure)):
+                if layer == 0:
+                    rheo = [structure[layer] for i in range(layers[layer] + 1)]
+                
+                # Intermediate layers
+                if layer > 0 and layer < len(structure) - 1:
+                    rheo = rheo + [structure[layer] for i in range((layers[layer] + 1) - (layers[layer - 1] + 1))]
+                
+                # Last layer
+                if layer == len(structure) - 1:
+                    rheo = rheo + [structure[layer] for i in range(model['model'].shape[0] - (layers[-1] + 1))]
+            
+            # Assign parameters
+            params = 0. * ones((len(rheo), 2))
+
+    return rheo, params
+
 # Main file
 # need to complete this
-def run_main():
+def run_main_pp():
 
     alma_params = tomlload(join(dirname(abspath(__file__)), 'params.toml'))
+
+    # Check none for parallel
+    if type(alma_params['parallel']) is not bool:
+        alma_params['parallel'] = None
 
     # Read PP model
     model = read_model_pp(abspath(alma_params['filename']))
 
     # Build model for alma
-    # @TODO: Need to write a function for this
-    rheology, params = [], []
+    
+    rheology, params = infer_rheology_pp(model,
+                                         structure=alma_params['rheology_structure'],
+                                         layer_radius=alma_params['layer_radius'],
+                                         layer_radius_index=alma_params['layer_radius_index'])
 
     model_params = build_model(model['model'][:, model['columns'].index('r')],
                                model['model'][:, model['columns'].index('rho')],
@@ -835,7 +1092,7 @@ def run_main():
     else:
         print(f'ERROR: Unknown scale for time: {alma_params["time"]}.')
         print('Allowed values are: "log", "geom", "lin".')
-        exit()
+        raise ValueError()
 
     # Compute love numbers
     h, l, k = love_numbers(n, t, 
@@ -848,9 +1105,4 @@ def run_main():
                            verbose = alma_params['verbose'],
                            parallel = alma_params['parallel'])
 
-    return
-
-'''
-if __name__ == "__main__":
-    
-'''
+    return h, l, k

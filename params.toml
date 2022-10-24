@@ -2,7 +2,13 @@
 # Set all parameters here, following the TOML file structure
 
 ## PP Model
-filename = '/mnt/e/OneDrive/Research/ALMA/pyalma/models/europa_alma.bm'
+filename = '/mnt/c/Users/MLL591/OneDrive/Research/PyALMA3/EuropaProfile_Seawater_35.2ppt_Tb268.305K.txt'
+
+# From core to surface
+rheology_structure = ['elastic', 'newton', 'maxwell']
+
+layer_radius = false
+layer_radius_index = false
 
 ## General Parameters
 # Number of digits
@@ -23,14 +29,14 @@ dmax  = 10
 dstep = 1
 
 # Time scale: 'log', 'geom', 'lin'
-time = 'ext'
+time = 'log'
 
 # Time points minus 1
-tpoints = 100
+tpoints = 20
 
 # Time range: 10^(m1:m2) kyrs
 timestart = -3
-timeend   = 3
+timeend   = 2
 
 # Load time history - function: 'step', 'ramp'
 function = 'step'
@@ -42,8 +48,9 @@ function_length = 1.0
 verbose = true
 
 # Output type: 'complex' or 'real'
-type = 'complex'
+type = 'real'
 
 # Force Parallel operation
-# If set to "None", code will auto-decide
-parallel = None
+# true, false, 'none'
+# 'none' - let code decide
+parallel = 'none'
