@@ -5,7 +5,7 @@
 filename = 'EuropaProfile_Seawater_35.2ppt_Tb268.305K.txt'
 
 # From core to surface
-rheology_structure = ['elastic', 'newton', 'maxwell']
+rheology_structure = ['elastic', 'newton', 'newton', 'maxwell']
 
 layer_radius = false
 layer_radius_index = false
