@@ -5,6 +5,7 @@
 Public release of PyALMA3 along with submission of manuscript.
 Moved change log to separate file
 Changed params.toml file to package-specific name paramsPyALMA3.toml
+Updated PlanetProfile example to latest version (v2.3.19)
 
 ## v0.1: 20 May 2022
 
