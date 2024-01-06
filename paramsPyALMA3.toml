@@ -2,7 +2,7 @@
 # Set all parameters here, following the TOML file structure
 
 ## PP Model
-filename = '/mnt/c/Users/MLL591/OneDrive/Research/PyALMA3/EuropaProfile_Seawater_35.2ppt_Tb268.305K.txt'
+filename = 'EuropaProfile_Seawater_35.2ppt_Tb268.305K.txt'
 
 # From core to surface
 rheology_structure = ['elastic', 'newton', 'maxwell']
@@ -41,7 +41,7 @@ timeend   = 2
 # Load time history - function: 'step', 'ramp'
 function = 'step'
 
-# Ramp lenght (kyrs)
+# Ramp length (kyrs)
 function_length = 1.0
 
 # Verbose

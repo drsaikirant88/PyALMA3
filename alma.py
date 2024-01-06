@@ -10,6 +10,7 @@ Copyright (C) 2022 Saikiran Tharimena
 '''
 VERSION CONTROL
 
+v1.0: Package public release along with submission of manuscript
 v0.1: This is the initial conversion of FORTRAN to Python
 '''
 
@@ -898,7 +899,7 @@ def infer_rheology_pp(model, structure=None, layer_radius=None, layer_radius_ind
         
         if len(layers) == 0:
             print('  >> Could not find pre-defined layers from radius.')
-            print('     Infering layers from density profile.')
+            print('     Inferring layers from density profile.')
 
             # Get gradient to infer layers
             rhograd = where(round(abs(gradient(model['model'][:, model['columns'].index('rho')], model['model'][:, model['columns'].index('r')])), 0) > 0.)[0]
@@ -1045,7 +1046,7 @@ def infer_rheology_pp(model, structure=None, layer_radius=None, layer_radius_ind
 # need to complete this
 def run_main_pp():
 
-    alma_params = tomlload(join(dirname(abspath(__file__)), 'params.toml'))
+    alma_params = tomlload(join(dirname(abspath(__file__)), 'paramsPyALMA3.toml'))
 
     # Check none for parallel
     if type(alma_params['parallel']) is not bool:

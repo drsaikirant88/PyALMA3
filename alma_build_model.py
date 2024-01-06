@@ -46,8 +46,8 @@ def read_model_bm(fname):
     # Return output variables
     return COLUMNS, UNITS, MODEL, RAD, RHO, RIG, VIS
 
-#%% Read velocity model from planet profile
-def read_model_pp(fname):
+#%% Read velocity model from legacy versions of PlanetProfile (pre-2.0)
+def read_model_pp_old(fname):
     print('Reading model from PlanetProfile output...')
 
     # Read file
@@ -125,7 +125,7 @@ def read_model_pp(fname):
     return COLUMNS, UNITS, MODEL, LAMBDA, MU, K, SIGMA, Y, RIG, VIS
 
 #%% Read velocity model from PlanetProfile v2.0+
-def read_model_ppv2(fname):
+def read_model_pp(fname):
     print('Reading model from PlanetProfile output...')
 
     # Read file
