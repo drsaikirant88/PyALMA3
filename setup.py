@@ -11,7 +11,7 @@ setup(
     url='https://github.com/drsaikirant88/PyALMA3',
     project_urls={
         'Bug tracker': 'https://github.com/drsaikirant88/PyALMA3/issues',
-        'Publication': 'TBD'
+        'Publication': 'https://doi.org/10.1093/gji/ggac263'
     },
     classifiers=[
         'Programming Language :: Python :: 3.8',
