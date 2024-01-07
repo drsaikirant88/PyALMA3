@@ -3,3 +3,4 @@ __pycache__*
 .ipynb_checkpoints*
 paramsPyALMA3.toml
 dist*
+PyALMA3.egg-info*
