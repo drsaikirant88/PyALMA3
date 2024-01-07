@@ -5,7 +5,7 @@ PyALMA3 is a pythonized version of ALMA 3. This software package calculates tida
 
 The recommended installation method is with pip:
 
-`pip install alma`
+`pip install PyALMA3`
 
 After installing with pip, copy over the default config file to your working directory with
 

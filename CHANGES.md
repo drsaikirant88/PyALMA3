@@ -11,6 +11,7 @@ Reconfigured file naming and directory structure to support packaging
 Implemented default config file stored in package and copied to PWD
 Updated jupyter notebooks to work with the above changes
 Modified PlanetProfile layer finder to use phase indices
+Corrected package name used for install with pip
 
 ## v0.1: 20 May 2022
 
