@@ -37,6 +37,6 @@ PyALMA3 is distributed in the hope that it will be useful, but without any warra
 
 GNU GPL: http://www.gnu.org/licenses/
 
-Authors: Saikiran Tharimena, Daniele Melini, Giorgio Spada, Steven D. Vance, Marshall J. Styczinski
+Authors: Saikiran Tharimena, Marshall J. Styczinski, Daniele Melini, Giorgio Spada, Steven D. Vance, Flavio Petricca, Amirhossein Bagheri
 
 Copyright (C) 2024 the authors.
