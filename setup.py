@@ -3,9 +3,9 @@ from setuptools import setup
 setup(
     name='PyALMA3',
     version='1.0.1',
-    author='Marshall J. Styczinski, Saikiran Tharimena, Daniele Melini, Giorgio Spada, ' +
-           'Steven D. Vance, Flavio Petricca, Amirhossein Bagheri',
-    author_email='itsmoosh@gmail.com',
+    author='Flavio Petricca, Saikiran Tharimena, Daniele Melini, Giorgio Spada, Amirhossein Bagheri' +
+           'Marshall J. Styczinski, Steven D. Vance',
+    author_email='flavio.petricca@uniroma1.it',
     description='Python plAnetary Love nuMbers cALculator',
     long_description=open('README.md').read(),
     long_description_content_type='text/markdown',
