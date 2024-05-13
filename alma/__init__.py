@@ -3,7 +3,7 @@ pyALMA3 (Python plAnetary Love nuMbers cALculator)
 pythonized version of ALMA 3
 ------------------------------------------------------------------------------
 
-Author: Saikiran Tharimena, Daniele Melini, Giorgio Spada, Steven D. Vance, Marshall J. Styczinski
+Author: Flavio Petricca, Saikiran Tharimena, Daniele Melini, Giorgio Spada, Amirhossein Bagheri, Marshall J. Styczinski, Steven D. Vance 
 Copyright (C) 2024 the authors
 """
 
